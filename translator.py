@@ -1,47 +1,29 @@
-import torch
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-print("Using device:", DEVICE)
+load_dotenv()
 
-# Model and tokenizer
-model_name = "ai4bharat/indictrans2-indic-en-1B"
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-model = AutoModelForSeq2SeqLM.from_pretrained(
-    model_name, trust_remote_code=True, torch_dtype=torch.float16
-).to(DEVICE)
-print("Model loaded successfully!")
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv('OR_API_KEY')
+)
 
-# Input sentences
-input_sentences = [
-    "जब मैं छोटा था, मैं हर रोज़ पार्क जाता था।",
-    "हमने पिछले सप्ताह एक नई फिल्म देखी जो कि बहुत प्रेरणादायक थी।"
-]
+with open('transcript.txt', 'r', encoding='utf-8') as f:
+    transcribed_text = f.read()
 
-# Language tags
-src_lang = "hin_Deva"  # Hindi (Devanagari)
-tgt_lang = "eng_Latn"  # English (Latin script)
+with open('prompt.txt', 'r', encoding='utf-8') as f:
+    reference_text = f.read()
 
-for sentence in input_sentences:
-    # Prefix sentence with source language tag
-    text = f"{src_lang}: {sentence}"
+response = client.chat.completions.create(
+    model="openai/gpt-oss-20b:free",
+    messages=[
+        {"role": "user", "content": f"""Reference: {reference_text}
 
-    # Tokenize
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding="longest").to(DEVICE)
+Transcribed: {transcribed_text}
 
-    # Generate translation (disable use_cache on Windows)
-    with torch.no_grad():
-        generated_tokens = model.generate(
-            **inputs,
-            min_length=0,
-            max_length=256,
-            num_beams=5,
-            use_cache=False  # avoid Windows flash_attention errors
-        )
+Use reference to correct errors, translate to English only:"""}
+    ]
+)
 
-    # Decode the generated tokens
-    translation = tokenizer.decode(
-        generated_tokens[0], skip_special_tokens=True, clean_up_tokenization_spaces=True
-    )
-    print(f"\nInput: {sentence}")
-    print(f"Translation: {translation}")
+print(response.choices[0].message.content)
